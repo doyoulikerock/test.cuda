@@ -331,6 +331,7 @@ void open_input_and_decoder(const char* input_filename) {
                          nullptr, 0);
   dec_ctx->hw_device_ctx = av_buffer_ref(hw_device_ctx);
   avcodec_open2(dec_ctx, decoder, nullptr);
+  dec_ctx->time_base = fmt_ctx->streams[video_stream_index]->time_base;
 }
 
 void open_encoder_and_output(const char* output_filename) {
@@ -342,7 +343,7 @@ void open_encoder_and_output(const char* output_filename) {
   enc_ctx->width = dec_ctx->width;
   enc_ctx->height= dec_ctx->height;
   enc_ctx->pix_fmt = AV_PIX_FMT_CUDA;
-  enc_ctx->time_base = {1, 30};
+  enc_ctx->time_base = dec_ctx->time_base;
   enc_ctx->framerate = {30, 1};
   enc_ctx->bit_rate = 4000000;
   enc_ctx->hw_device_ctx = av_buffer_ref(hw_device_ctx);
@@ -648,7 +649,7 @@ void open4_encoder_and_output(const char* output_filename) {
                                  output_filename);
   out_stream = avformat_new_stream(out_fmt_ctx, nullptr);
   avcodec_parameters_from_context(out_stream->codecpar, enc_ctx);
-  out_stream->time_base = dec_ctx->time_base;
+  out_stream->time_base = enc_ctx->time_base;
   avio_open(&out_fmt_ctx->pb, output_filename, AVIO_FLAG_WRITE);
   avformat_write_header(out_fmt_ctx, nullptr);
 }
@@ -658,9 +659,11 @@ void decode_encode_loop4() {
   AVPacket* pkt = av_packet_alloc();
   AVFrame* frame = av_frame_alloc();
   int ret;
+  std::cout << "dec.timebase:" << dec_ctx->time_base.num << "/" << dec_ctx->time_base.den << "\n";
   while (av_read_frame(fmt_ctx, pkt) >= 0) {
-    cnt_read++;
+    
     if (pkt->stream_index == video_stream_index) {
+      cnt_read++;
       std::cout << "cnt:" << cnt_read << " " << cnt_decoded << " " << cnt_send
                 << " " << cnt_encoded << "\n";
       if (avcodec_send_packet(dec_ctx, pkt) == 0) {
@@ -675,19 +678,24 @@ void decode_encode_loop4() {
           av_hwframe_get_buffer(enc_ctx->hw_frames_ctx, padded_frame, 0);
 
           launch_copy_kernel(padded_frame->data[0], padded_frame->linesize[0],
-            120, 120,
+            100, 100,
                              frame->data[0], frame->linesize[0], 
                              frame->width,
                              frame->height);
+          launch_copy_kernel(padded_frame->data[1], padded_frame->linesize[1],
+          100, 50,
+                             frame->data[1], frame->linesize[1], frame->width,
+                             frame->height / 2);
+
  
 
-          padded_frame->pts = frame->pts;
-          //padded_frame->pts = cnt_decoded;
+          //padded_frame->pts = frame->pts;
+          padded_frame->pts = cnt_decoded;
 
 
 
           // 프레임은 GPU 메모리에 있음 (AV_PIX_FMT_CUDA)
-          // std::cout << "Decoded frame PTS: " << frame->pts << "\n";
+          std::cout << "Decoded frame PTS: " << frame->pts << "\n";
 
           ret = avcodec_send_frame(enc_ctx, padded_frame);
           std::cout << "ret:" << ret << "\n";
@@ -704,8 +712,8 @@ void decode_encode_loop4() {
               break;
             }
             cnt_encoded++;
-            /*av_packet_rescale_ts(enc_pkt, enc_ctx->time_base,
-                                 out_stream->time_base);*/
+            av_packet_rescale_ts(enc_pkt, enc_ctx->time_base,
+                                 out_stream->time_base);
             enc_pkt->stream_index = out_stream->index;
             av_interleaved_write_frame(out_fmt_ctx, enc_pkt);
             av_packet_free(&enc_pkt);
@@ -728,8 +736,12 @@ void decode_encode_loop4() {
       av_packet_free(&enc_pkt);
       break;
     }
-    /*av_packet_rescale_ts(enc_pkt, enc_ctx->time_base,
-     * out_stream->time_base);*/
+
+     cnt_encoded++;
+    std::cout << "flushing:" << cnt_encoded << "\n";
+
+    av_packet_rescale_ts(enc_pkt, enc_ctx->time_base,
+     out_stream->time_base);
     enc_pkt->stream_index = out_stream->index;
     av_interleaved_write_frame(out_fmt_ctx, enc_pkt);
     av_packet_free(&enc_pkt);
@@ -748,7 +760,8 @@ void decode_encode_loop4() {
 int main() {
   //av_log_set_level(100);
   av_log_set_level(40);
-  const char* input_filename = "c:\\dev\\frameCount.mp4";
+  //const char* input_filename = "c:\\dev\\frameCount.mp4";
+  //const char* input_filename = "c:\\dev\\frameCount30s_nv12.mp4";
   //const char* input_filename = "c:\\dev\\input.mp4"; 
   const char* output_filename = "c:\\dev\\output.mp4";
 
