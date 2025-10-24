@@ -10,3 +10,4 @@ ffmpeg lib를 사용하여 cuda frame을 다루는 example
 
      -> nvenc -> write mp4
 
+required : cuda sdk(12.8), vcpkg(ffmpeg)
