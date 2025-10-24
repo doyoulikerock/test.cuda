@@ -1,0 +1,32 @@
+{
+  "dependencies": [
+    {
+      "name": "ffmpeg",
+      "features": [
+        "avcodec",
+        "avdevice",
+        "avfilter",
+        "avformat",
+        "swresample",
+        "swscale",
+        "ffmpeg",
+        "ffplay",
+        "ffprobe",
+        "nvcodec",
+        "opencl",
+        "postproc",
+        "sdl2",
+        "nonfree",
+        "fontconfig",
+        "x264",
+        "x265",
+        "opus",
+        "freetype",
+        "vorbis"
+      ]
+    },
+    {
+      "name": "fmt"
+    }
+  ]
+}
