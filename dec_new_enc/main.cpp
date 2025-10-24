@@ -311,6 +311,7 @@ AVStream* out_stream = nullptr;
 //AVBufferRef* hw_device_ctx = nullptr;
 AVBufferRef* hw_frames_ctx = nullptr;
 int video_stream_index = -1;
+int audio_stream_index = -1;
 void open_input_and_decoder(const char* input_filename) {
   avformat_open_input(&fmt_ctx, input_filename, nullptr, nullptr);
   avformat_find_stream_info(fmt_ctx, nullptr);
@@ -322,6 +323,14 @@ void open_input_and_decoder(const char* input_filename) {
       break;
     }
   }
+
+    for (unsigned int i = 0; i < fmt_ctx->nb_streams; i++) {
+    if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+        audio_stream_index = i;
+      break;
+    }
+  }
+
 
   const AVCodec* decoder = avcodec_find_decoder_by_name("h264_cuvid");
   dec_ctx = avcodec_alloc_context3(decoder);
@@ -616,7 +625,7 @@ void decode_encode_loop3() {
 
 
 
-
+AVStream* out_audio_stream = nullptr;
 void open4_encoder_and_output(const char* output_filename) {
   const AVCodec* encoder = avcodec_find_encoder_by_name("hevc_nvenc");
   enc_ctx = avcodec_alloc_context3(encoder);
@@ -650,6 +659,14 @@ void open4_encoder_and_output(const char* output_filename) {
   out_stream = avformat_new_stream(out_fmt_ctx, nullptr);
   avcodec_parameters_from_context(out_stream->codecpar, enc_ctx);
   out_stream->time_base = enc_ctx->time_base;
+
+
+  out_audio_stream = avformat_new_stream(out_fmt_ctx, nullptr);
+  avcodec_parameters_copy(out_audio_stream->codecpar,
+                          fmt_ctx->streams[audio_stream_index]->codecpar);
+  out_audio_stream->time_base = fmt_ctx->streams[audio_stream_index]->time_base;
+
+
   avio_open(&out_fmt_ctx->pb, output_filename, AVIO_FLAG_WRITE);
   avformat_write_header(out_fmt_ctx, nullptr);
 }
@@ -723,6 +740,14 @@ void decode_encode_loop4() {
           av_frame_free(&padded_frame);
         }
       }
+    } else {
+        // 오디오 스트림 그대로 기록
+        AVStream* in_stream = fmt_ctx->streams[pkt->stream_index];
+        AVStream* out_stream = out_audio_stream;
+
+        av_packet_rescale_ts(pkt, in_stream->time_base, out_stream->time_base);
+        pkt->stream_index = pkt->stream_index;  // 그대로 유지
+        av_interleaved_write_frame(out_fmt_ctx, pkt);
     }
     av_packet_unref(pkt);
   }
@@ -761,7 +786,7 @@ int main() {
   //av_log_set_level(100);
   av_log_set_level(40);
   //const char* input_filename = "c:\\dev\\frameCount.mp4";
-  //const char* input_filename = "c:\\dev\\frameCount30s_nv12.mp4";
+  const char* input_filename = "c:\\dev\\frameCount30s_nv12.mp4";
   //const char* input_filename = "c:\\dev\\input.mp4"; 
   const char* output_filename = "c:\\dev\\output.mp4";
 
